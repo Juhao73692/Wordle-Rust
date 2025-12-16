@@ -1,0 +1,4 @@
+[console.background]
+matched = "green"
+present = "yellow"
+absent  = "gray"
