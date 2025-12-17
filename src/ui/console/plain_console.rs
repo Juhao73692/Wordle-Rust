@@ -2,9 +2,9 @@ use std::io::{Write, stdout};
 
 use crate::{
     game::game::Game,
-    types::{ColourConfig, ConsoleBackgroundColour, GameResult, GameState},
+    types::*,
+    ui::console::config::*,
 };
-use crate::types::LetterState;
 pub struct App {
     pub game: Game,
     pub colour_config: ColourConfig,
