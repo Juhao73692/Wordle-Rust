@@ -14,6 +14,8 @@ use ratatui::{
     widgets::{Block, Borders, Paragraph},
 };
 
+use crossterm::event::KeyModifiers;
+
 use crate::{
     game::game::Game,
     types::*,
@@ -33,9 +35,14 @@ pub struct App {
 
     board: Vec<Vec<Cell>>,
     input: String,
+    last_guess: String,
 
     show_warning: bool,
+    warning_message: Option<String>,
     warning_ticks: u8,
+
+    game_over_message: Option<String>,
+    should_quit: bool,
 }
 
 impl App {
@@ -51,8 +58,12 @@ impl App {
             colour_config,
             board: vec![vec![Cell::Empty; n]; k as usize],
             input: String::new(),
+            last_guess: String::new(),
+            warning_message: None,
             show_warning: false,
             warning_ticks: 0,
+            game_over_message: None,
+            should_quit: false,
         }
     }
 
@@ -78,15 +89,24 @@ impl App {
             Terminal::new(CrosstermBackend::new(stdout())).unwrap();
 
         loop {
+            if self.should_quit {
+                break;
+            }
             terminal.draw(|f| self.draw(f)).unwrap();
 
-            if self.game.get_state() != GameState::InProgress {
-                break;
+            if self.game_over_message.is_none() {
+                if let GameState::Over(result) = self.game.get_state() {
+                    self.game_over_message = Some(match result {
+                        GameResult::Won => String::from("Congratulations!"),
+                        GameResult::Lost => format!("Game over! The correct answer was: {}",
+                            self.game.get_answer()),
+                    });
+                }
             }
 
             if event::poll(Duration::from_millis(120)).unwrap() {
                 if let Event::Key(key) = event::read().unwrap() {
-                    self.handle_key(key.code);
+                    self.handle_key(key.code, key.modifiers);
                 }
             }
 
@@ -100,7 +120,22 @@ impl App {
 
     /* ---------- input ---------- */
 
-    fn handle_key(&mut self, code: KeyCode) {
+    fn handle_key(&mut self, code: KeyCode, modifiers: KeyModifiers) {
+        if modifiers.contains(KeyModifiers::CONTROL) {
+            if let KeyCode::Char('c') = code {
+                self.should_quit = true;
+                return;
+            }
+        }
+        if code == KeyCode::Up {
+            if self.last_guess != String::from(""){
+                self.input = self.last_guess.clone();
+            }
+        }
+        if self.game_over_message.is_some() {
+            return;
+        }
+
         let n = self.game.get_word_length();
 
         match code {
@@ -120,13 +155,7 @@ impl App {
     }
 
     fn submit(&mut self) {
-        let n = self.game.get_word_length();
         let row = self.game.get_attempts();
-
-        if self.input.len() != n {
-            self.flash_warning();
-            return;
-        }
 
         match self.game.guess(&self.input) {
             Ok(result) => {
@@ -134,9 +163,13 @@ impl App {
                     let ch = self.input.chars().nth(col).unwrap();
                     self.board[row as usize][col] = Cell::Result(ch, *state);
                 }
+                self.last_guess = self.input.clone();
                 self.input.clear();
             }
-            Err(_) => self.flash_warning(),
+            Err(err) => {
+                self.warning_message = Some(String::from(format!("Error: {}", err)));
+                self.flash_warning()
+            },
         }
     }
 
@@ -184,7 +217,7 @@ impl App {
         .split(f.area());
 
         self.draw_board(f, layout[0]);
-        self.draw_warning(f, layout[1]);
+        self.draw_status(f, layout[1]);
     }
 
     fn draw_board(&self, f: &mut Frame, area: Rect) {
@@ -196,6 +229,7 @@ impl App {
                 let (ch, style) = self.render_cell(cell);
                 spans.push(Span::styled(format!("[{}]", ch), style));
             }
+            spans.push(Span::styled("[↵]", Style::default().fg(Color::DarkGray)));
             lines.push(Line::from(spans));
         }
 
@@ -206,7 +240,7 @@ impl App {
 
         // cursor
         let row = self.game.get_attempts();
-        let x = area.x + 1 + (self.input.len() as u16) * 3;
+        let x = area.x + 1 + (self.input.len() as u16) * 3 + 1;
         let y = area.y + 1 + row as u16;
         f.set_cursor_position(Position { x: x, y: y });
     }
@@ -228,13 +262,17 @@ impl App {
             }
         }
     }
+    fn draw_status(&self, f: &mut Frame, area: Rect) {
+        let (text, style) = if let Some(msg) = self.game_over_message.clone() {
+            (msg, Style::default().fg(Color::Green))
+        } else if self.show_warning {
+            (self.warning_message.clone().unwrap(), Style::default().fg(Color::Red))
+        } else {
+            (String::from(""), Style::default())
+        };
 
-    fn draw_warning(&self, f: &mut Frame, area: Rect) {
-        if self.show_warning {
-            let p = Paragraph::new("Invalid word")
-                .style(Style::default().fg(Color::Red));
-            f.render_widget(p, area);
-        }
+        let p = Paragraph::new(text);
+        f.render_widget(p.style(style), area);
     }
 
     /* ---------- end ---------- */
