@@ -88,4 +88,7 @@ impl Game {
     pub fn get_word_length(&self) -> usize {
         self.word_length
     }
+    pub fn give_up(&mut self) {
+        self.state = GameState::Over(GameResult::Lost);
+    }
 }
