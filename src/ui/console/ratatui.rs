@@ -30,6 +30,8 @@ enum Cell {
 }
 
 pub struct App {
+    #[allow(unused)]
+    difficulty: GameDifficulty,
     game: Game,
     colour_config: ColourConfig,
 
@@ -54,8 +56,9 @@ impl App {
         let k = game.get_max_attempts();
 
         Self {
-            game,
-            colour_config,
+            difficulty: *difficulty,
+            game: game,
+            colour_config: colour_config,
             board: vec![vec![Cell::Empty; n]; k as usize],
             input: String::new(),
             last_guess: String::new(),
@@ -98,8 +101,10 @@ impl App {
                 if let GameState::Over(result) = self.game.get_state() {
                     self.game_over_message = Some(match result {
                         GameResult::Won => String::from("Congratulations!"),
-                        GameResult::Lost => format!("Game over! The correct answer was: {}",
-                            self.game.get_answer()),
+                        GameResult::Lost => format!(
+                            "Game over! The correct answer was: {}",
+                            self.game.get_answer()
+                        ),
                     });
                 }
             }
@@ -115,7 +120,6 @@ impl App {
         }
 
         Self::leave_terminal();
-        self.print_result();
     }
 
     /* ---------- input ---------- */
@@ -126,9 +130,13 @@ impl App {
                 self.should_quit = true;
                 return;
             }
+            if let KeyCode::Char('g') = code {
+                self.game.give_up();
+                return;
+            }
         }
         if code == KeyCode::Up {
-            if self.last_guess != String::from(""){
+            if self.last_guess != String::from("") {
                 self.input = self.last_guess.clone();
             }
         }
@@ -213,11 +221,13 @@ impl App {
         let layout = Layout::vertical([
             Constraint::Length(k as u16 + 2),
             Constraint::Length(1),
+            Constraint::Length(2),
         ])
         .split(f.area());
 
         self.draw_board(f, layout[0]);
         self.draw_status(f, layout[1]);
+        self.draw_info(f, layout[2]);
     }
 
     fn draw_board(&self, f: &mut Frame, area: Rect) {
@@ -239,10 +249,16 @@ impl App {
         f.render_widget(p, area);
 
         // cursor
-        let row = self.game.get_attempts();
-        let x = area.x + 1 + (self.input.len() as u16) * 3 + 1;
-        let y = area.y + 1 + row as u16;
-        f.set_cursor_position(Position { x: x, y: y });
+        match self.game.get_state() {
+            GameState::InProgress => {
+                let row = self.game.get_attempts();
+                let x = area.x + 1 + (self.input.len() as u16) * 3 + 1;
+                let y = area.y + 1 + row as u16;
+                f.set_cursor_position(Position { x: x, y: y });
+            }
+            GameState::Over(_) => {}
+            _ => {}
+        }
     }
 
     fn render_cell(&self, cell: &Cell) -> (char, Style) {
@@ -266,7 +282,10 @@ impl App {
         let (text, style) = if let Some(msg) = self.game_over_message.clone() {
             (msg, Style::default().fg(Color::Green))
         } else if self.show_warning {
-            (self.warning_message.clone().unwrap(), Style::default().fg(Color::Red))
+            (
+                self.warning_message.clone().unwrap(),
+                Style::default().fg(Color::Red),
+            )
         } else {
             (String::from(""), Style::default())
         };
@@ -274,21 +293,11 @@ impl App {
         let p = Paragraph::new(text);
         f.render_widget(p.style(style), area);
     }
-
-    /* ---------- end ---------- */
-
-    fn print_result(&self) {
-        match self.game.get_state() {
-            GameState::Over(GameResult::Won) => {
-                println!("Congratulations! You won!");
-            }
-            GameState::Over(GameResult::Lost) => {
-                println!(
-                    "Game over! The correct answer was: {}",
-                    self.game.get_answer()
-                );
-            }
-            _ => {}
-        }
+    fn draw_info(&self, f: &mut Frame, area: Rect) {
+        let style = Style::new().fg(Color::Green);
+        f.render_widget(
+            Paragraph::new("⌃C - quit game\n^G - give up").style(style),
+            area,
+        );
     }
 }

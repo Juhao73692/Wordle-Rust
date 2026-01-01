@@ -53,7 +53,6 @@ impl Word {
         if word_length >= self.answer.len() {
             return Err("Invalid word length.");
         }
-        println!("Generating word of length: {}", word_length);
         let words = &self.answer[word_length];
         if words.is_empty() {
             return Err("No words available for the given length.");
